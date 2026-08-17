@@ -1,0 +1,9 @@
+# dsh-llm-kimi bundle patch: registers the Kimi (Moonshot) LLM adapter.
+# 三个路由（kimi-code / kimi-cn / kimi-global）使用各自约定的默认密钥环境变量：
+#   kimi-code    → $KIMI_API_KEY（Kimi Code 订阅，sk-kimi-*，端点 api.kimi.com/coding/v1）
+#   kimi-cn      → $MOONSHOT_API_KEY（Moonshot 开放平台国内，sk-*，api.moonshot.cn/v1）
+#   kimi-global  → $MOONSHOT_API_KEY（Moonshot 开放平台海外，sk-*，api.moonshot.ai/v1）
+# 可通过 apiKeyEnvCode / apiKeyEnvCn / apiKeyEnvGlobal 或公共 apiKeyEnv 覆盖。
+- insert:
+    - id: llm-kimi
+      name: dsh-llm-kimi
