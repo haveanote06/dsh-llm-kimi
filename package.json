@@ -46,6 +46,15 @@
     }
   },
   "license": "MIT",
+  "author": "haveanote06",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haveanote06/dsh-llm-kimi.git"
+  },
+  "homepage": "https://github.com/haveanote06/dsh-llm-kimi#readme",
+  "bugs": {
+    "url": "https://github.com/haveanote06/dsh-llm-kimi/issues"
+  },
   "keywords": [
     "deepseek-harness",
     "dsh-plugin",
