@@ -16,10 +16,14 @@
 ## 安装
 
 ```sh
+# 从 GitHub 安装（构建产物已随仓库提交，无需本机编译）
+dsh plugin --profile web add github:haveanote06/dsh-llm-kimi
+
+# 从 npm 安装（发布后）
 dsh plugin --profile web add dsh-llm-kimi
 ```
 
-（本地开发路径：`dsh plugin --profile web add /path/to/kimi-plugin`）
+安装后重启 `dsh web`，在 Web GUI 设置页的 "Kimi" 页配置 API Key 即可使用。
 
 ## 配置密钥
 
