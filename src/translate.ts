@@ -8,7 +8,7 @@
  * @module dsh-llm-kimi/translate
  */
 
-import { CallId, EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm'
+import { EMPTY_RESPONSE_CODE, LlmError, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, FinishReason, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { DONE } from './sse.ts'
 import type { WireChunk, WireUsage } from './types.ts'
@@ -26,7 +26,7 @@ interface OpenBlock {
 /**
  * Map the wire finish_reason vocabulary to the harness FinishReason.
  * @param reason - the wire `finish_reason` string.
- * @returns the mapped reason; unrecognized values (content_filter, …) become `{kind: 'error'}` with the uppercased value as `code`.
+ * @returns the mapped reason; unrecognized values (content_filter, 鈥? become `{kind: 'error'}` with the uppercased value as `code`.
  */
 export function mapFinishReason(reason: string): FinishReason {
   switch (reason) {
@@ -68,7 +68,7 @@ function closeBlock(block: OpenBlock): ContentBlock {
     case 'reasoning': return { type: 'reasoning', text: block.text }
     case 'tool-call': return {
       type: 'tool-call',
-      id: CallId(block.callId ?? ''),
+      id: ToolCallId(block.callId ?? ''),
       name: block.name ?? '',
       arguments: block.text,
     }
@@ -163,7 +163,7 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
         yield {
           type: 'tool-call-delta',
           index: block.index,
-          id: CallId(block.callId ?? ''),
+          id: ToolCallId(block.callId ?? ''),
           ...block.name !== undefined ? { name: block.name } : {},
           argumentsDelta: fragment,
         }
@@ -175,7 +175,7 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
     }
 
     // Usage may arrive attached to the finish chunk or as a trailing
-    // usage-only chunk — keep the latest.
+    // usage-only chunk 鈥?keep the latest.
     if (chunk.usage) pendingUsage = mapUsage(chunk.usage)
   }
 

@@ -11,7 +11,7 @@
  */
 
 import { LlmError } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions, Message, RequestMessage } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { WireContentPart, WireMessage, WireRequest, WireTool } from './types.ts'
 
@@ -91,8 +91,8 @@ function resolveThinking(
     : { thinkingType: defaults.thinking }
 }
 
-/** Join the text blocks of a message (used for user/tool-result content). */
-function flattenText(blocks: Message['content']): string {
+/** Join the text blocks of a message (used for user text and tool-result content). */
+function flattenText(blocks: readonly ContentBlock[]): string {
   return blocks
     .filter(block => block.type === 'text')
     .map(block => block.text)
@@ -144,42 +144,40 @@ function serializeAssistant(message: Message): WireMessage {
 /**
  * Serialize a user message, embedding images as data URIs when multimodal.
  * Text-only messages serialize to a plain string; image-bearing messages
- * serialize to a content-part array. Tool-result-only messages contribute
- * nothing of their own (returns `undefined`; the results are expanded into
- * tool messages by the caller).
+ * serialize to a content-part array. Tool results are their own messages in
+ * this vocabulary, so a user message contributes nothing when it carries
+ * neither text nor images.
  */
-async function serializeUser(message: Message, ctx: SerializeContext, model: string): Promise<WireMessage | undefined> {
-  const toolResults = message.content.filter(block => block.type === 'tool-result')
+async function serializeUser(
+  message: RequestMessage,
+  ctx: SerializeContext,
+  model: string,
+): Promise<WireMessage | undefined> {
   const text = flattenText(message.content)
   const images = message.content.filter(block => block.type === 'image')
-  if (text.length > 0 || images.length > 0 || toolResults.length === 0) {
-    if (images.length === 0) return { role: 'user', content: text }
-    const parts: WireContentPart[] = []
-    if (text.length > 0) parts.push({ type: 'text', text })
-    for (const image of images) {
-      assertModelAcceptsImages(model, ctx.imageModels)
-      const stored = await ctx.resolveImage(image.attachment)
-      parts.push({ type: 'image_url', image_url: { url: dataUri(stored) } })
-    }
-    return { role: 'user', content: parts }
+  if (text.length === 0 && images.length === 0) return undefined
+  if (images.length === 0) return { role: 'user', content: text }
+  const parts: WireContentPart[] = []
+  if (text.length > 0) parts.push({ type: 'text', text })
+  for (const image of images) {
+    assertModelAcceptsImages(model, ctx.imageModels)
+    const stored = await ctx.resolveImage(image.attachment)
+    parts.push({ type: 'image_url', image_url: { url: dataUri(stored) } })
   }
-  // Text-less, image-less, tool-result-only user messages contribute nothing
-  // of their own; the tool results are expanded into tool messages below.
-  return undefined
+  return { role: 'user', content: parts }
 }
 
 /**
- * Serialize the conversation. `tool-result` blocks become standalone
- * `{role: 'tool'}` messages; the harness puts each tool result in its own
- * user-role message, so a mixed user message contributes its text/images first
- * and its tool results as separate wire messages after.
- * @param messages - the harness conversation, in order.
+ * Serialize the conversation. Tool results arrive as their own `role: 'tool'`
+ * messages carrying a tool-call id; Moonshot wants exactly that shape, so each
+ * one maps to a `{role: 'tool', tool_call_id, content}` entry in place.
+ * @param messages - the harness request messages, in order.
  * @param ctx - serialization context (image policy + resolver).
  * @param model - the target wire model id.
- * @returns the wire messages; order preserved, each tool result expanded into its own entry.
+ * @returns the wire messages; order preserved.
  */
 export async function serializeMessages(
-  messages: Message[],
+  messages: readonly RequestMessage[],
   ctx: SerializeContext,
   model: string,
 ): Promise<WireMessage[]> {
@@ -189,22 +187,26 @@ export async function serializeMessages(
       wire.push({ role: 'system', content: flattenText(message.content) })
       continue
     }
+    if (message.role === 'developer') {
+      // Developer instructions (tool-change notes) are harness bookkeeping;
+      // the route receives the projected tool declarations instead.
+      continue
+    }
     if (message.role === 'assistant') {
       wire.push(serializeAssistant(message))
       continue
     }
-    // user role: tool results ride in user messages in the harness vocabulary,
-    // but Moonshot wants them as role:'tool' messages.
-    const user = await serializeUser(message, ctx, model)
-    if (user !== undefined) wire.push(user)
-    for (const result of message.content.filter(block => block.type === 'tool-result')) {
+    if (message.role === 'tool') {
       wire.push({
         role: 'tool',
-        tool_call_id: result.toolCallId,
+        tool_call_id: message.toolCallId,
         // Empty tool output still needs SOME content on the wire.
-        content: flattenText(result.content) || '(no output)',
+        content: flattenText(message.content) || '(no output)',
       })
+      continue
     }
+    const user = await serializeUser(message, ctx, model)
+    if (user !== undefined) wire.push(user)
   }
   return wire
 }

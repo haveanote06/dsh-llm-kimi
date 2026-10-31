@@ -1,13 +1,18 @@
 /**
- * Register a {@link KimiAdapter} for the `kimi-cn` and `kimi-global` provider
- * routes on `ctx.llm`, with connection facts resolved per request instead of
- * frozen at load: the plugin layers its `cordis.yml` entry config under the
- * optional `llm-kimi` user-settings section (`ctx.settings`) and resolves the
- * API key through the optional credential seam (`ctx.credentials`), so a
- * changed base URL, catalog, or key reaches the very next request without
- * restarting anything, while an in-flight stream keeps the facts it started
- * with. The one registration-captured fact — the retry policy — re-registers
- * the routes in place when it changes.
+ * Register a {@link KimiAdapter} for the three provider routes on `ctx.llm`,
+ * with connection facts resolved per request instead of frozen at load: the
+ * plugin layers its profile entry config under the optional `llm-kimi`
+ * user-settings section and resolves the API key through the optional
+ * credential seam (`ctx.credentials`), so a changed base URL, catalog, or key
+ * reaches the very next request without restarting anything, while an
+ * in-flight stream keeps the facts it started with. The one
+ * registration-captured fact 鈥?the retry policy 鈥?re-registers the routes in
+ * place when it changes.
+ *
+ * 0.2.x hands every volatile Config field to `apply` as a live reference, not
+ * a plain value, so each read goes through {@link plainOptions}; the Loader
+ * announces an accepted configuration generation with
+ * `loader/volatile-update`.
  *
  * @module dsh-llm-kimi
  */
@@ -15,11 +20,18 @@ import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm';
 import { type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment';
+import { type Volatile } from '@deepseek-ai/cosmokit';
 import type { KimiCatalogModel, KimiConnectionOptions } from './adapter.ts';
 export { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_STREAM_IDLE_TIMEOUT_MS, KimiAdapter, PROVIDER_DISPLAY_NAMES, } from './adapter.ts';
 export type { KimiAdapterOptions, KimiCatalogModel, KimiConnectionOptions } from './adapter.ts';
 export type { RequestDefaults } from './serialize.ts';
 export type * from './types.ts';
+declare module '@deepseek-ai/cordis' {
+    interface Events {
+        /** One accepted volatile-only configuration generation. */
+        'loader/volatile-update'(paths: readonly (readonly string[])[]): void;
+    }
+}
 export declare const name = "llm-kimi";
 export declare const inject: string[];
 /** The three provider routes this plugin owns. */
@@ -73,13 +85,58 @@ export interface Config {
     /** Provider-owned model-request retry policy; omission uses normal defaults. */
     retryPolicy?: RetryPolicyConfig;
 }
-export declare const Config: z<Config>;
+/**
+ * The configuration `apply` actually receives: every field is a live reference
+ * whose `get()` returns the newest accepted value.
+ */
+export type LiveConfig = {
+    readonly [K in keyof Config]: Volatile<Config[K]>;
+};
+export declare const Config: z<Schemastery.ObjectS<NoInfer<{
+    apiKeyEnv: z<string, string, "volatile-defined">;
+    apiKeyEnvCode: z<string, string, "volatile">;
+    apiKeyEnvCn: z<string, string, "volatile">;
+    apiKeyEnvGlobal: z<string, string, "volatile">;
+    baseURLCode: z<string, string, "volatile">;
+    baseURLCn: z<string, string, "volatile">;
+    baseURLGlobal: z<string, string, "volatile">;
+    thinking: z<"enabled" | "disabled", "enabled" | "disabled", "volatile">;
+    reasoningEffort: z<"high" | "max" | "off", "high" | "max" | "off", "volatile">;
+    maxTokens: z<number, number, "volatile-defined">;
+    defaultContextWindow: z<number, number, "volatile-defined">;
+    models: z<NoInfer<KimiCatalogModel[]>, NoInfer<KimiCatalogModel[]>, "volatile-defined">;
+    streamIdleTimeoutMs: z<number, number, "volatile-defined">;
+    retryPolicy: z<NoInfer<RetryPolicyConfig>, NoInfer<RetryPolicyConfig>, "volatile">;
+}>>, Schemastery.ObjectT<NoInfer<{
+    apiKeyEnv: z<string, string, "volatile-defined">;
+    apiKeyEnvCode: z<string, string, "volatile">;
+    apiKeyEnvCn: z<string, string, "volatile">;
+    apiKeyEnvGlobal: z<string, string, "volatile">;
+    baseURLCode: z<string, string, "volatile">;
+    baseURLCn: z<string, string, "volatile">;
+    baseURLGlobal: z<string, string, "volatile">;
+    thinking: z<"enabled" | "disabled", "enabled" | "disabled", "volatile">;
+    reasoningEffort: z<"high" | "max" | "off", "high" | "max" | "off", "volatile">;
+    maxTokens: z<number, number, "volatile-defined">;
+    defaultContextWindow: z<number, number, "volatile-defined">;
+    models: z<NoInfer<KimiCatalogModel[]>, NoInfer<KimiCatalogModel[]>, "volatile-defined">;
+    streamIdleTimeoutMs: z<number, number, "volatile-defined">;
+    retryPolicy: z<NoInfer<RetryPolicyConfig>, NoInfer<RetryPolicyConfig>, "volatile">;
+}>>, "plain">;
+/**
+ * Detach a live plugin configuration: 0.2.x hands volatile fields to `apply`
+ * as tracked cells, so every read goes through this function and the next
+ * request sees the newest values.
+ * @param config - live plugin configuration.
+ * @returns detached plain option values.
+ */
+export declare function plainOptions(config: LiveConfig): Config;
 /** One resolution's complete request facts for every route, keyed by route. */
 export type ResolvedKimiOptions = Record<RouteKey, KimiConnectionOptions>;
 /**
  * The one explicit resolve step from raw config to validated connection
- * facts for both routes. Programmatic construction may bypass Schemastery
- * normalization, so every default and bound is re-judged here — for the
+ * facts for every route. Programmatic construction may bypass Schemastery
+ * normalization, so every default and bound is re-judged here 鈥?for the
  * composition entry at load (fail loud) and for each settings snapshot at its
  * first use.
  * @param config - raw plugin config or resolved settings snapshot.
@@ -90,5 +147,5 @@ export type ResolvedKimiOptions = Record<RouteKey, KimiConnectionOptions>;
  * @returns validated connection facts plus the credential references.
  */
 export declare function resolveAdapterOptions(config: Config, environment?: LaunchEnvironmentSnapshot): ResolvedKimiOptions;
-export declare function apply(ctx: Context, config: Config): void;
+export declare function apply(ctx: Context, config: LiveConfig): void;
 //# sourceMappingURL=index.d.ts.map
