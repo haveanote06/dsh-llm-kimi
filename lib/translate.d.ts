@@ -12,7 +12,7 @@ import type { WireUsage } from './types.ts';
 /**
  * Map the wire finish_reason vocabulary to the harness FinishReason.
  * @param reason - the wire `finish_reason` string.
- * @returns the mapped reason; unrecognized values (content_filter, …) become `{kind: 'error'}` with the uppercased value as `code`.
+ * @returns the mapped reason; unrecognized values (content_filter, 鈥? become `{kind: 'error'}` with the uppercased value as `code`.
  */
 export declare function mapFinishReason(reason: string): FinishReason;
 /**

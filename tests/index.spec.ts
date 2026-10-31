@@ -10,6 +10,7 @@ import {
   PUBLIC_BASE_URL_CODE,
   PUBLIC_BASE_URL_CN,
   PUBLIC_BASE_URL_GLOBAL,
+  plainOptions,
 } from '../src/index.ts'
 
 describe('resolveAdapterOptions', () => {
@@ -84,7 +85,9 @@ describe('resolveAdapterOptions', () => {
   })
 
   it('validates the Config schema through schemastery defaults', () => {
-    const config = Config(undefined as never)
+    // 0.2.x exposes every volatile field as a live reference; the plain values
+    // only exist behind one detached read.
+    const config = plainOptions(Config(undefined as never))
     expect(config.apiKeyEnv).toBe('MOONSHOT_API_KEY')
     expect(config.maxTokens).toBe(256_000)
     expect(config.defaultContextWindow).toBe(1_000_000)

@@ -1,13 +1,18 @@
 /**
- * Register a {@link KimiAdapter} for the `kimi-cn` and `kimi-global` provider
- * routes on `ctx.llm`, with connection facts resolved per request instead of
- * frozen at load: the plugin layers its `cordis.yml` entry config under the
- * optional `llm-kimi` user-settings section (`ctx.settings`) and resolves the
- * API key through the optional credential seam (`ctx.credentials`), so a
- * changed base URL, catalog, or key reaches the very next request without
- * restarting anything, while an in-flight stream keeps the facts it started
- * with. The one registration-captured fact — the retry policy — re-registers
- * the routes in place when it changes.
+ * Register a {@link KimiAdapter} for the three provider routes on `ctx.llm`,
+ * with connection facts resolved per request instead of frozen at load: the
+ * plugin layers its profile entry config under the optional `llm-kimi`
+ * user-settings section and resolves the API key through the optional
+ * credential seam (`ctx.credentials`), so a changed base URL, catalog, or key
+ * reaches the very next request without restarting anything, while an
+ * in-flight stream keeps the facts it started with. The one
+ * registration-captured fact 鈥?the retry policy 鈥?re-registers the routes in
+ * place when it changes.
+ *
+ * 0.2.x hands every volatile Config field to `apply` as a live reference, not
+ * a plain value, so each read goes through {@link plainOptions}; the Loader
+ * announces an accepted configuration generation with
+ * `loader/volatile-update`.
  *
  * @module dsh-llm-kimi
  */
@@ -18,7 +23,8 @@ import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } f
 import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
+import { isVolatile, type Volatile } from '@deepseek-ai/cosmokit'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import {
@@ -43,10 +49,16 @@ export type { KimiAdapterOptions, KimiCatalogModel, KimiConnectionOptions } from
 export type { RequestDefaults } from './serialize.ts'
 export type * from './types.ts'
 
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** One accepted volatile-only configuration generation. */
+    'loader/volatile-update'(paths: readonly (readonly string[])[]): void
+  }
+}
+
 export const name = 'llm-kimi'
 export const inject = ['llm']
 
-const NS = settingsNamespace('llm-kimi')
 const DEFAULT_API_KEY_ENV = 'MOONSHOT_API_KEY'
 const DEFAULT_API_KEY_ENV_CODE = 'KIMI_API_KEY'
 
@@ -128,6 +140,12 @@ export interface Config {
   retryPolicy?: RetryPolicyConfig
 }
 
+/**
+ * The configuration `apply` actually receives: every field is a live reference
+ * whose `get()` returns the newest accepted value.
+ */
+export type LiveConfig = { readonly [K in keyof Config]: Volatile<Config[K]> }
+
 const MODALITIES: readonly ModelModality[] = ['text', 'image']
 
 const catalogModel: z<KimiCatalogModel> = z.object({
@@ -140,22 +158,37 @@ const catalogModel: z<KimiCatalogModel> = z.object({
   reasoning: z.boolean(),
 })
 
-export const Config: z<Config> = z.object({
-  apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
-  apiKeyEnvCode: z.string().role('credential-ref'),
-  apiKeyEnvCn: z.string().role('credential-ref'),
-  apiKeyEnvGlobal: z.string().role('credential-ref'),
-  baseURLCode: z.string(),
-  baseURLCn: z.string(),
-  baseURLGlobal: z.string(),
-  thinking: z.union(['enabled', 'disabled']),
-  reasoningEffort: z.union(['off', 'high', 'max']),
-  maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
-  defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
-  models: z.array(catalogModel).default(DEFAULT_MODELS),
-  streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
-  retryPolicy: RetryPolicySchema,
+export const Config = z.object({
+  apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV).volatile(),
+  apiKeyEnvCode: z.string().role('credential-ref').volatile(),
+  apiKeyEnvCn: z.string().role('credential-ref').volatile(),
+  apiKeyEnvGlobal: z.string().role('credential-ref').volatile(),
+  baseURLCode: z.string().volatile(),
+  baseURLCn: z.string().volatile(),
+  baseURLGlobal: z.string().volatile(),
+  thinking: z.union(['enabled', 'disabled']).volatile(),
+  reasoningEffort: z.union(['off', 'high', 'max']).volatile(),
+  maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS).volatile(),
+  defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW).volatile(),
+  models: z.array(catalogModel).default(DEFAULT_MODELS).volatile(),
+  streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS).volatile(),
+  retryPolicy: RetryPolicySchema.volatile(),
 })
+
+/**
+ * Detach a live plugin configuration: 0.2.x hands volatile fields to `apply`
+ * as tracked cells, so every read goes through this function and the next
+ * request sees the newest values.
+ * @param config - live plugin configuration.
+ * @returns detached plain option values.
+ */
+export function plainOptions(config: LiveConfig): Config {
+  const plain: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(config)) {
+    plain[key] = isVolatile(value) ? value.get() : value
+  }
+  return plain as Config
+}
 
 /** One resolution's complete request facts for every route, keyed by route. */
 export type ResolvedKimiOptions = Record<RouteKey, KimiConnectionOptions>
@@ -186,8 +219,7 @@ function resolveModels(models: readonly KimiCatalogModel[] | undefined): KimiCat
     }
     const modalities = model.inputModalities as ModelModality[] | null | undefined
     if (modalities != null) {
-      // An empty array is a valid "no declared modalities" (text-only) state —
-      // Schemastery normalizes absent optional arrays to `[]`.
+      // An empty array is a valid "no declared modalities" (text-only) state 鈥?      // Schemastery normalizes absent optional arrays to `[]`.
       invariant(
         modalities.every(modality => MODALITIES.includes(modality)),
         `llm-kimi: catalog model "${model.id}" has invalid inputModalities`,
@@ -209,8 +241,8 @@ function resolveModels(models: readonly KimiCatalogModel[] | undefined): KimiCat
 
 /**
  * The one explicit resolve step from raw config to validated connection
- * facts for both routes. Programmatic construction may bypass Schemastery
- * normalization, so every default and bound is re-judged here — for the
+ * facts for every route. Programmatic construction may bypass Schemastery
+ * normalization, so every default and bound is re-judged here 鈥?for the
  * composition entry at load (fail loud) and for each settings snapshot at its
  * first use.
  * @param config - raw plugin config or resolved settings snapshot.
@@ -279,32 +311,33 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
   }
 }
 
-export function apply(ctx: Context, config: Config): void {
-  let current: () => Config = () => config
-  let lastRaw: Config | undefined
+export function apply(ctx: Context, config: LiveConfig): void {
+  // The provider directory names settings by the loader entry id, exactly as
+  // the first-party providers do; the Settings page keys its form off it.
+  const ns = (ctx.fiber as unknown as {
+    entry?: { options?: { id?: string } }
+  }).entry?.options?.id ?? 'llm-kimi'
   let lastGood: ResolvedKimiOptions | undefined
+  let lastError: unknown
   const options = (provider: string): KimiConnectionOptions => {
-    const raw = current()
-    if (raw === lastRaw && lastGood !== undefined) return lastGood[provider as RouteKey]
     try {
-      const next = resolveAdapterOptions(raw, launchEnvironmentOf(ctx))
-      lastRaw = raw
+      const next = resolveAdapterOptions(plainOptions(config), launchEnvironmentOf(ctx))
       lastGood = next
+      lastError = undefined
       return next[provider as RouteKey]
     } catch (error) {
       // Static composition resolves before anything registers, so this branch
       // only sees a live settings snapshot failing a beyond-schema bound:
       // keep serving the last good facts and say so once per bad snapshot.
       if (lastGood === undefined) throw error
-      lastRaw = raw
-      ctx.logger.error('llm-kimi: keeping the last good configuration after an invalid settings section')
-      ctx.logger.error(error)
+      if (error !== lastError) {
+        lastError = error
+        ctx.logger.error('llm-kimi: keeping the last good configuration after an invalid settings section')
+        ctx.logger.error(error)
+      }
       return lastGood[provider as RouteKey]
     }
   }
-  options(CODE_ROUTE)
-  options(CN_ROUTE)
-  options(GLOBAL_ROUTE)
 
   const resolveApiKey = async (connection: KimiConnectionOptions, provider: string): Promise<string> => {
     // Every credential fact comes from the caller's snapshot, so a rejected
@@ -316,7 +349,7 @@ export function apply(ctx: Context, config: Config): void {
       if (hit !== undefined) return assertUsableApiKey(hit.value, 'llm-kimi', ref)
     }
     // The environment is the fallback credential plane even when a managed
-    // store exists: the error message promises `export … in the launching
+    // store exists: the error message promises `export 鈥?in the launching
     // environment` as a working path, so it must be one.
     const ambient = launchEnvironmentOf(ctx).get(ref)
     if (ambient !== undefined && ambient.value.length > 0) {
@@ -349,14 +382,23 @@ export function apply(ctx: Context, config: Config): void {
 
   const adapter = new KimiAdapter({ options, resolveApiKey, resolveUserId, resolveImage })
   ctx.llm.registerConfigurableProviders([
-    { provider: CODE_ROUTE, displayName: 'Kimi Code', settingsNs: NS, settingsPath: [] },
-    { provider: CN_ROUTE, displayName: 'Kimi (Moonshot CN)', settingsNs: NS, settingsPath: [] },
-    { provider: GLOBAL_ROUTE, displayName: 'Kimi (Moonshot Global)', settingsNs: NS, settingsPath: [] },
+    { provider: CODE_ROUTE, displayName: 'Kimi Code', settingsNs: ns, settingsPath: [] },
+    { provider: CN_ROUTE, displayName: 'Kimi (Moonshot CN)', settingsNs: ns, settingsPath: [] },
+    { provider: GLOBAL_ROUTE, displayName: 'Kimi (Moonshot Global)', settingsNs: ns, settingsPath: [] },
   ])
-  // Route effects bind to this apply fiber via the stable `ctx` reference,
-  // even when a swap runs inside the scoped settings callback below.
+  // Route effects bind to this apply fiber via the stable `ctx` reference.
   const registration = ctx.llm.registerAdapter([CODE_ROUTE, CN_ROUTE, GLOBAL_ROUTE], adapter)
-  let registeredPolicy = options(CODE_ROUTE).retryPolicy
+  let registeredPolicy: KimiConnectionOptions['retryPolicy']
+  try {
+    registeredPolicy = options(CODE_ROUTE).retryPolicy
+  } catch (error) {
+    // A settings section that fails the beyond-schema bounds must not keep the
+    // routes off the directory: register with the schema defaults, and let the
+    // next accepted generation (or the Settings page) supply the real values.
+    ctx.logger.error('llm-kimi: the configured settings section is invalid; registering with the default retry policy')
+    ctx.logger.error(error)
+    registeredPolicy = resolveAdapterOptions(plainOptions(Config({})), undefined)[CODE_ROUTE].retryPolicy
+  }
   const ensureRegistrationFacts = (): void => {
     const policy = options(CODE_ROUTE).retryPolicy
     if (deepEqualJson(policy, registeredPolicy)) return
@@ -369,10 +411,8 @@ export function apply(ctx: Context, config: Config): void {
     registeredPolicy = policy
   }
 
-  installSettingsSection(ctx, NS, Config, config, {
-    setSource: (source) => {
-      current = source
-    },
-    onChange: ensureRegistrationFacts,
-  })
+  // 0.2.x refreshes volatile config in place and announces it once per
+  // accepted generation; the registry's captured retry policy is the one fact
+  // per-request resolution cannot refresh, so re-register on change.
+  ctx.on('loader/volatile-update', ensureRegistrationFacts)
 }

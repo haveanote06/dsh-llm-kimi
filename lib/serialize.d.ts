@@ -9,7 +9,7 @@
  *
  * @module dsh-llm-kimi/serialize
  */
-import type { GenerateOptions, Message } from '@deepseek-ai/dsh-llm';
+import type { GenerateOptions, RequestMessage } from '@deepseek-ai/dsh-llm';
 import type { ImageAttachmentRef, StoredImageAttachment } from '@deepseek-ai/dsh-attachment';
 import type { WireMessage, WireRequest } from './types.ts';
 /** Adapter-level request defaults (from plugin config). */
@@ -29,16 +29,15 @@ export interface SerializeContext {
     resolveImage: ImageResolver;
 }
 /**
- * Serialize the conversation. `tool-result` blocks become standalone
- * `{role: 'tool'}` messages; the harness puts each tool result in its own
- * user-role message, so a mixed user message contributes its text/images first
- * and its tool results as separate wire messages after.
- * @param messages - the harness conversation, in order.
+ * Serialize the conversation. Tool results arrive as their own `role: 'tool'`
+ * messages carrying a tool-call id; Moonshot wants exactly that shape, so each
+ * one maps to a `{role: 'tool', tool_call_id, content}` entry in place.
+ * @param messages - the harness request messages, in order.
  * @param ctx - serialization context (image policy + resolver).
  * @param model - the target wire model id.
- * @returns the wire messages; order preserved, each tool result expanded into its own entry.
+ * @returns the wire messages; order preserved.
  */
-export declare function serializeMessages(messages: Message[], ctx: SerializeContext, model: string): Promise<WireMessage[]>;
+export declare function serializeMessages(messages: readonly RequestMessage[], ctx: SerializeContext, model: string): Promise<WireMessage[]>;
 /**
  * Build the full wire request. Always streaming (`stream: true`, usage
  * reporting on); optional fields are omitted rather than sent as null, so

@@ -1,10 +1,16 @@
 /**
  * Real-composition guard for the dynamic-configuration chain: LlmRuntime,
- * settings-file, credentials-local, and dsh-llm-kimi boot from a test-only
- * cordis.yml through the actual Loader + Include path; external edits of
- * settings.yaml and the credentials document hot-publish through their
- * providers, and the very next request carries the fresh base URL and
- * credential. Also verifies the dual-route registration (kimi-cn/kimi-global).
+ * credentials-local, and dsh-llm-kimi boot from a test-only cordis.yml through
+ * the actual Loader + Include path. External edits of the credentials document
+ * hot-publish through the credentials provider, and the very next request
+ * carries the fresh key. Also verifies the three-route registration
+ * (kimi-code/kimi-cn/kimi-global) and per-route request routing.
+ *
+ * 0.2.x moved user-settings persistence out of the plugin seam: the
+ * `settings` service is the app-level forms owner (configEditor +
+ * profileContext), so this suite exercises the part a plugin owns — the loader
+ * entry config plus the credential plane — and leaves settings-document
+ * hot-publish to the harness's own suites.
  */
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -18,14 +24,11 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import * as KimiPlugin from '../src/index.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
-const NS = settingsNamespace('llm-kimi')
 const KEY_REF = credentialRef('MOONSHOT_API_KEY')
 
 let root: string | undefined
@@ -41,23 +44,21 @@ afterEach(async () => {
 })
 
 async function loadComposition(options: {
-  withDynamic: boolean
+  withCredentials: boolean
   baseURLCn: string
   baseURLGlobal?: string
   baseURLCode?: string
-  reuseRoot?: string
-}): Promise<{ ctx: Context; settingsPath: string; credentialsPath: string }> {
-  const fresh = options.reuseRoot === undefined
-  root = options.reuseRoot ?? await mkdtemp(join(tmpdir(), 'dsh-llm-kimi-composition-'))
+}): Promise<{ ctx: Context; credentialsPath: string }> {
+  root = await mkdtemp(join(tmpdir(), 'dsh-llm-kimi-composition-'))
   vi.stubEnv('DSH_HOME', root)
-  const settingsPath = join(root, 'settings.yaml')
   const credentialsPath = join(root, '.credentials.yaml')
-  if (options.withDynamic && fresh) {
-    await writeFile(settingsPath, '# personal settings\n')
+  if (options.withCredentials) {
     // The code route reads KIMI_API_KEY; the open-platform routes read MOONSHOT_API_KEY.
     await writeFile(credentialsPath, [
-      'KIMI_API_KEY: boot-key',
-      'MOONSHOT_API_KEY: boot-key',
+      'version: 1',
+      'refs:',
+      '  KIMI_API_KEY: boot-key',
+      '  MOONSHOT_API_KEY: boot-key',
       '',
     ].join('\n'), { mode: 0o600 })
   }
@@ -66,13 +67,8 @@ async function loadComposition(options: {
   await writeFile(configPath, [
     '- id: llm',
     "  name: 'test-llm-service'",
-    ...options.withDynamic
+    ...options.withCredentials
       ? [
-        '- id: settings',
-        "  name: '@deepseek-ai/dsh-settings-file'",
-        '  config:',
-        `    path: ${JSON.stringify(settingsPath)}`,
-        '    debounceMs: 10',
         '- id: credentials',
         "  name: '@deepseek-ai/dsh-credentials-local'",
         '  config:',
@@ -100,7 +96,6 @@ async function loadComposition(options: {
   ctx.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
     ['test-llm-service', LlmRuntime],
-    ['@deepseek-ai/dsh-settings-file', FileSettingsProvider],
     ['@deepseek-ai/dsh-credentials-local', LocalCredentialProvider],
     ['dsh-llm-kimi', KimiPlugin],
   ])
@@ -116,7 +111,7 @@ async function loadComposition(options: {
     config: { path: pathToFileURL(configPath).href },
   })
   await ctx.loader.await()
-  return { ctx, settingsPath, credentialsPath }
+  return { ctx, credentialsPath }
 }
 
 describe('llm-kimi real dynamic composition', () => {
@@ -127,13 +122,12 @@ describe('llm-kimi real dynamic composition', () => {
     const serverCn = await mockServer([{ kind: 'sse', events: textEvents }])
     const serverGlobal = await mockServer([{ kind: 'sse', events: textEvents }])
     const { ctx } = await loadComposition({
-      withDynamic: true,
+      withCredentials: true,
       baseURLCode: serverCode.url,
       baseURLCn: serverCn.url,
       baseURLGlobal: serverGlobal.url,
     })
 
-    expect(ctx.get('settings')!.describe().map(entry => entry.ns)).toEqual([NS])
     const providers = ctx.get('llm')!.listProviders().map(provider => provider.id)
     expect(providers).toContain('kimi-code')
     expect(providers).toContain('kimi-cn')
@@ -158,40 +152,39 @@ describe('llm-kimi real dynamic composition', () => {
     expect(serverGlobal.headers[0]?.authorization).toBe('Bearer boot-key')
   })
 
-  it('hot-publishes external settings and credential edits to the next request', async () => {
+  it('hot-publishes external credential edits to the next request', async () => {
     vi.stubEnv('MOONSHOT_API_KEY', '')
-    const serverA = await mockServer([{ kind: 'sse', events: textEvents }])
-    const serverB = await mockServer([{ kind: 'sse', events: textEvents }])
-    const { ctx, settingsPath, credentialsPath } = await loadComposition({
-      withDynamic: true,
-      baseURLCn: serverA.url,
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const { ctx, credentialsPath } = await loadComposition({
+      withCredentials: true,
+      baseURLCn: server.url,
     })
 
     await assemble(ctx, { provider: 'kimi-cn', model: 'kimi-k3', messages: [] })
-    expect(serverA.headers[0]?.authorization).toBe('Bearer boot-key')
+    expect(server.headers[0]?.authorization).toBe('Bearer boot-key')
 
-    // External edits, exactly as a user or the web UI would leave them on disk.
-    await writeFile(settingsPath, `llm-kimi:\n  baseURLCn: ${serverB.url}\n`)
-    await vi.waitFor(() => {
-      expect((ctx.get('settings')!.get(NS) as { baseURLCn?: string }).baseURLCn).toBe(serverB.url)
-    }, { timeout: 5000 })
-    await writeFile(credentialsPath, 'MOONSHOT_API_KEY: rotated-key\n', { mode: 0o600 })
+    // External edit, exactly as the web UI would leave it on disk.
+    await writeFile(credentialsPath, [
+      'version: 1',
+      'refs:',
+      '  KIMI_API_KEY: boot-key',
+      '  MOONSHOT_API_KEY: rotated-key',
+      '',
+    ].join('\n'), { mode: 0o600 })
     await vi.waitFor(async () => {
       expect(await ctx.get('credentials')!.resolve(KEY_REF)).toEqual({ value: 'rotated-key', source: 'file' })
     }, { timeout: 5000 })
 
     await assemble(ctx, { provider: 'kimi-cn', model: 'kimi-k3', messages: [] })
-    expect(serverA.requests).toHaveLength(1)
-    expect(serverB.requests).toHaveLength(1)
-    expect(serverB.headers[0]?.authorization).toBe('Bearer rotated-key')
+    expect(server.requests).toHaveLength(2)
+    expect(server.headers[1]?.authorization).toBe('Bearer rotated-key')
   })
 
   it('boots on entry config alone, resolving the credential from the environment', async () => {
     vi.stubEnv('MOONSHOT_API_KEY', 'entry-key')
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
-    const { ctx } = await loadComposition({ withDynamic: false, baseURLCn: server.url })
+    const { ctx } = await loadComposition({ withCredentials: false, baseURLCn: server.url })
 
-    expect(ctx.get('settings')).toBeUndefined()
     expect(ctx.get('credentials')).toBeUndefined()
     await assemble(ctx, { provider: 'kimi-cn', model: 'kimi-k3', messages: [] })
     expect(server.headers[0]?.authorization).toBe('Bearer entry-key')

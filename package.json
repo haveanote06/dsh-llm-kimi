@@ -1,7 +1,7 @@
 {
   "name": "dsh-llm-kimi",
-  "description": "Kimi (Moonshot AI) chat-completions adapter for the DeepSeek Harness LLM seam — three routes: kimi-code (Kimi Code subscription), kimi-cn, kimi-global",
-  "version": "0.1.0",
+  "description": "Kimi (Moonshot AI) chat-completions adapter for the DeepSeek Harness LLM seam: three routes (kimi-code subscription, kimi-cn, kimi-global) plus a Kimi settings page in the Web GUI",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -14,46 +14,29 @@
       "types": "./lib/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
-    "./client": "./client/client.js",
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/*.js",
     "lib/*.d.ts",
-    "client/client.js",
     "src",
     "cordis.patch.yml"
   ],
-  "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b --pretty false",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-api-remotes"
-      ]
-    }
-  },
   "license": "MIT",
   "author": "haveanote06",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/haveanote06/dsh-llm-kimi.git"
   },
-  "homepage": "https://github.com/haveanote06/dsh-llm-kimi#readme",
-  "bugs": {
-    "url": "https://github.com/haveanote06/dsh-llm-kimi/issues"
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke": "node smoke.mjs && node smoke-client.mjs",
+    "test": "vitest run"
   },
   "keywords": [
     "deepseek-harness",
@@ -64,35 +47,37 @@
     "llm-adapter",
     "agent"
   ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
+    }
+  },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-anonymous-user-id": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-attachment": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-credentials": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-launch-environment": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-timeout": "^0.1.0-rc.6"
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/cosmokit": "~1.8.6",
+    "@deepseek-ai/dsh-anonymous-user-id": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-attachment": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-credentials": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-launch-environment": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-timeout": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-util-values": "0.2.1-rc.2"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.1",
+    "@deepseek-ai/schemastery": "~3.18.5",
     "eventsource-parser": "^3.1.0"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/cordis-plugin-include": "^1.0.6",
-    "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
-    "@deepseek-ai/dsh-anonymous-user-id": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-attachment": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-credentials": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-credentials-local": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-launch-environment": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-settings-file": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-timeout": "^0.1.0-rc.6",
     "@types/node": "^22.10.0",
-    "typescript": "^5.6.3",
-    "vitest": "^3.2.0"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   }
 }

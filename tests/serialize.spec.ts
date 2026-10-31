@@ -1,9 +1,9 @@
 /**
- * Serializer unit tests: harness messages → Kimi wire request.
+ * Serializer unit tests: harness messages 鈫?Kimi wire request.
  */
 
 import { describe, expect, it } from 'vitest'
-import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage, LlmError, ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { serializeRequest } from '../src/serialize.ts'
@@ -128,7 +128,7 @@ describe('serializeRequest', () => {
       content: [
         { type: 'reasoning', text: 'secret chain' },
         { type: 'text', text: '' },
-        { type: 'tool-call', id: CallId('call_1'), name: 'read_file', arguments: '{"path":"a.txt"}' },
+        { type: 'tool-call', id: ToolCallId('call_1'), name: 'read_file', arguments: '{"path":"a.txt"}' },
       ],
       source: { kind: 'model', provider: 'kimi-cn', model: 'kimi-k3' },
     })
@@ -147,7 +147,7 @@ describe('serializeRequest', () => {
 
   it('expands tool results into role:tool messages, keeping mixed user text first', async () => {
     const toolResult = createToolResultMessage({
-      callId: CallId('call_1'),
+      callId: ToolCallId('call_1'),
       content: [{ type: 'text', text: 'file contents' }],
       isError: false,
     })
@@ -163,7 +163,7 @@ describe('serializeRequest', () => {
 
   it('puts a placeholder in empty tool results', async () => {
     const emptyResult = createToolResultMessage({
-      callId: CallId('call_9'),
+      callId: ToolCallId('call_9'),
       content: [],
       isError: false,
     })
