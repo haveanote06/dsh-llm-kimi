@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1
+
+### 修复
+
+- **凭据回退链让 `kimi-code` 借用了开放平台 key**：`apiKeyEnv` 带 schema 默认值 `MOONSHOT_API_KEY`，旧写法 `apiKeyEnvCode ?? apiKeyEnv ?? 'KIMI_API_KEY'` 里 `??` 永远走不到最后，于是只配了 `MOONSHOT_API_KEY` 时，请求被发到 `https://api.kimi.com/coding/v1` 并返回 `AUTH`（订阅端点不认开放平台 key）。现在共享字段停在默认值时不再算"用户选择"，`kimi-code` 用它自己的 `KIMI_API_KEY`；显式设过 `apiKeyEnv` 的仍然对所有路由生效。设置页的凭据引用推导同步修正。回归测试见 `tests/index.spec.ts`。
+
+### 变更
+
+- 模型目录补上 **Kimi K3.1 Pro**：`k3.1-pro`、`k3.1-pro-highspeed`（Kimi Code 订阅，1M 上下文，只支持思考模式）。
+- 移除已下线的 `moonshot-v1-8k` / `-32k` / `-128k`（厂商已关闭这些 id，留着只会在请求时失败）。
+
 ## 0.2.0 — 适配 DeepSeek Harness 0.2.1-rc.2
 
 破坏性平台升级（`0.1.0-rc.6` → `0.2.1-rc.2`）的完整移植，并新增 Web GUI 设置页。

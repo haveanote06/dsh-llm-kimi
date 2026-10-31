@@ -21,11 +21,11 @@
 
 | 路由 | key 类型 | 默认端点 | 默认凭据引用 |
 |---|---|---|---|
-| `kimi-code` | Kimi Code 订阅（`sk-kimi-*`） | `https://api.kimi.com/coding/v1` | `KIMI_API_KEY` → 回退 `MOONSHOT_API_KEY` |
-| `kimi-cn` | Moonshot 开放平台（`sk-*`）国内 | `https://api.moonshot.cn/v1` | `MOONSHOT_API_KEY` |
-| `kimi-global` | Moonshot 开放平台（`sk-*`）海外 | `https://api.moonshot.ai/v1` | `MOONSHOT_API_KEY` |
+| `kimi-code` | Kimi Code 订阅（`sk-kimi-*`） | `https://api.kimi.com/coding/v1` | `KIMI_API_KEY`（可用 `apiKeyEnvCode` 覆盖） |
+| `kimi-cn` | Moonshot 开放平台（`sk-*`）国内 | `https://api.moonshot.cn/v1` | `MOONSHOT_API_KEY`（可用 `apiKeyEnvCn` 覆盖） |
+| `kimi-global` | Moonshot 开放平台（`sk-*`）海外 | `https://api.moonshot.ai/v1` | `MOONSHOT_API_KEY`（可用 `apiKeyEnvGlobal` 覆盖） |
 
-> 注意：`apiKeyEnv` 的 schema 默认值是 `MOONSHOT_API_KEY`，所以只设 `MOONSHOT_API_KEY` 时 `kimi-code` 也会用它；想让 Kimi Code 走订阅 key，请在设置页或 `apiKeyEnvCode` 里单独指定（默认为 `KIMI_API_KEY`）。
+> 注意：`apiKeyEnv` 的 schema 默认值就是 `MOONSHOT_API_KEY`，**停在默认值时它不算一次显式选择**——否则只有开放平台 key 的机器会把平台 key 发到订阅端点并拿到 `AUTH`。所以你显式把 `apiKeyEnv` 设成别的值，它才会对所有路由生效；想单独给 Kimi Code 用订阅 key，就填 `apiKeyEnvCode`（默认 `KIMI_API_KEY`）。
 
 ## 安装
 
@@ -85,14 +85,16 @@ dsh web
 
 | 模型 | 上下文 | 模态 | 备注 |
 |---|---|---|---|
-| `kimi-for-coding` | 262k | 文本+图片 | Kimi Code 订阅（K2.7） |
-| `kimi-for-coding-highspeed` | 262k | 文本+图片 | Kimi Code 高速版 |
+| `k3.1-pro` / `k3.1-pro-highspeed` | 1M | 文本+图片 | Kimi Code 订阅旗舰（K3.1 Pro）；**只支持思考模式**，高速版约 2–3 倍速、2 倍消耗 |
+| `kimi-for-coding` | 262k | 文本+图片 | Kimi Code 订阅（K2.8 Preview） |
+| `kimi-for-coding-highspeed` | 262k | 文本+图片 | Kimi Code 高速版（K2.7 Code） |
 | `k3` / `k3-256k` | 1M / 262k | 文本+图片 | Kimi Code K3 |
 | `kimi-k3` | 1M | 文本+图片 | 开放平台 K3 |
-| `kimi-k2.6` / `kimi-k2.7-code` | 256k | 文本+图片 | 开放平台 |
-| `moonshot-v1-8k/32k/128k` | 8k~128k | 文本 | 旧版，目录标 `reasoning: false` |
+| `kimi-k2.6` / `kimi-k2.7-code` | 256k | 文本+图片 | 开放平台（`/v1/models` 实测可用的两个） |
 
-模型 id 原样发给 API，不做白名单校验，所以填新模型不会因为插件不认识而失败。
+模型 id 原样发给 API，不做白名单校验，所以填新模型不会因为插件不认识而失败。旧的 `moonshot-v1-*` 已被厂商下线，不再出现在默认目录里（要保留就自己写进 `models`）。
+
+> 目录是**静态快照**：插件不会去调 `/v1/models`，厂商新发布的 id 需要更新目录或自行写进 `models` 配置。
 
 ## 开发
 

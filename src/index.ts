@@ -84,11 +84,17 @@ const BASE_URL_ENV_GLOBAL = 'MOONSHOT_BASE_URL_GLOBAL'
 
 /**
  * Advisory catalog for all three routes (union). Kimi Code subscription keys
- * unlock kimi-for-coding/k3; Moonshot open-platform keys unlock kimi-k3 /
- * kimi-k2.x / moonshot-v1. Model ids are passed through to the wire without
- * validation, so the union is safe on every route.
+ * unlock k3.1-pro/k3.1-pro-highspeed/k3/kimi-for-coding; Moonshot open-platform
+ * keys unlock kimi-k3 / kimi-k2.x. Model ids are passed through to the wire
+ * without validation, so the union is safe on every route: an id the account
+ * cannot use is refused by the provider, not by the plugin.
+ *
+ * The retired moonshot-v1 family is gone: the provider shut those ids down, so
+ * advertising them only produced a request-time error.
  */
 const DEFAULT_MODELS: KimiCatalogModel[] = [
+  { id: 'k3.1-pro', name: 'Kimi K3.1 Pro', contextWindow: 1_048_576, inputModalities: ['text', 'image'] },
+  { id: 'k3.1-pro-highspeed', name: 'Kimi K3.1 Pro Highspeed', contextWindow: 1_048_576, inputModalities: ['text', 'image'] },
   { id: 'kimi-for-coding', name: 'Kimi For Coding (K2.7)', contextWindow: 262_144, inputModalities: ['text', 'image'] },
   { id: 'kimi-for-coding-highspeed', name: 'Kimi For Coding Highspeed', contextWindow: 262_144, inputModalities: ['text', 'image'] },
   { id: 'k3', name: 'Kimi K3', contextWindow: 1_048_576, inputModalities: ['text', 'image'] },
@@ -96,9 +102,6 @@ const DEFAULT_MODELS: KimiCatalogModel[] = [
   { id: 'kimi-k3', name: 'Kimi K3 (Open Platform)', contextWindow: 1_000_000, inputModalities: ['text', 'image'] },
   { id: 'kimi-k2.6', name: 'Kimi K2.6', contextWindow: 256_000, inputModalities: ['text', 'image'] },
   { id: 'kimi-k2.7-code', name: 'Kimi K2.7 Code', contextWindow: 256_000, inputModalities: ['text', 'image'] },
-  { id: 'moonshot-v1-128k', name: 'Moonshot V1 128K', contextWindow: 128_000, reasoning: false },
-  { id: 'moonshot-v1-32k', name: 'Moonshot V1 32K', contextWindow: 32_000, reasoning: false },
-  { id: 'moonshot-v1-8k', name: 'Moonshot V1 8K', contextWindow: 8_000, reasoning: false },
 ]
 
 /**
@@ -285,25 +288,37 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
     streamIdleTimeoutMs,
     retryPolicy: resolveRetryPolicy(config.retryPolicy, 'llm-kimi: retryPolicy'),
   }
+  const sharedApiKeyEnv = config.apiKeyEnv ?? DEFAULT_API_KEY_ENV
+  /**
+   * The reference one route reads. A route-specific setting always wins; the
+   * shared `apiKeyEnv` only counts when it was actually chosen, because its
+   * schema default is the open-platform reference and that key is rejected by
+   * the Kimi Code subscription endpoint. A route that falls back therefore
+   * keeps its own conventional variable.
+   */
+  const routeRef = (configured: string | undefined, fallback: string): string => {
+    if (configured !== undefined && configured.length > 0) return configured
+    if (sharedApiKeyEnv !== DEFAULT_API_KEY_ENV) return sharedApiKeyEnv
+    return fallback
+  }
   return {
     [CODE_ROUTE]: {
       ...shared,
-      // Kimi Code subscription keys conventionally live in $KIMI_API_KEY.
-      apiKeyEnv: credentialRef(config.apiKeyEnvCode ?? config.apiKeyEnv ?? DEFAULT_API_KEY_ENV_CODE),
+      apiKeyEnv: credentialRef(routeRef(config.apiKeyEnvCode, DEFAULT_API_KEY_ENV_CODE)),
       baseURL: config.baseURLCode
         ?? environment?.get(BASE_URL_ENV_CODE)?.value
         ?? PUBLIC_BASE_URL_CODE,
     },
     [CN_ROUTE]: {
       ...shared,
-      apiKeyEnv: credentialRef(config.apiKeyEnvCn ?? config.apiKeyEnv ?? DEFAULT_API_KEY_ENV),
+      apiKeyEnv: credentialRef(routeRef(config.apiKeyEnvCn, DEFAULT_API_KEY_ENV)),
       baseURL: config.baseURLCn
         ?? environment?.get(BASE_URL_ENV_CN)?.value
         ?? PUBLIC_BASE_URL_CN,
     },
     [GLOBAL_ROUTE]: {
       ...shared,
-      apiKeyEnv: credentialRef(config.apiKeyEnvGlobal ?? config.apiKeyEnv ?? DEFAULT_API_KEY_ENV),
+      apiKeyEnv: credentialRef(routeRef(config.apiKeyEnvGlobal, DEFAULT_API_KEY_ENV)),
       baseURL: config.baseURLGlobal
         ?? environment?.get(BASE_URL_ENV_GLOBAL)?.value
         ?? PUBLIC_BASE_URL_GLOBAL,

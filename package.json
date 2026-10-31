@@ -1,7 +1,7 @@
 {
   "name": "dsh-llm-kimi",
   "description": "Kimi (Moonshot AI) chat-completions adapter for the DeepSeek Harness LLM seam: three routes (kimi-code subscription, kimi-cn, kimi-global) plus a Kimi settings page in the Web GUI",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

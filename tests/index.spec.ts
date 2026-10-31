@@ -93,4 +93,18 @@ describe('resolveAdapterOptions', () => {
     expect(config.defaultContextWindow).toBe(1_000_000)
     expect(config.models?.length).toBeGreaterThan(0)
   })
+
+  it('keeps the code route off the shared default reference', () => {
+    // Regression: `apiKeyEnv` always carries its schema default, so a plain
+    // `??` chain made the Kimi Code route read the open-platform key and the
+    // subscription endpoint answered AUTH. The default must not count as a
+    // choice; an explicit one still flows to the open-platform routes.
+    const defaults = resolveAdapterOptions(plainOptions(Config(undefined as never)))
+    expect(String(defaults['kimi-code'].apiKeyEnv)).toBe('KIMI_API_KEY')
+    expect(String(defaults['kimi-cn'].apiKeyEnv)).toBe('MOONSHOT_API_KEY')
+
+    const chosen = resolveAdapterOptions(plainOptions(Config({ apiKeyEnv: 'MY_SHARED_KEY' } as never)))
+    expect(String(chosen['kimi-code'].apiKeyEnv)).toBe('MY_SHARED_KEY')
+    expect(String(chosen['kimi-cn'].apiKeyEnv)).toBe('MY_SHARED_KEY')
+  })
 })

@@ -191,6 +191,17 @@ assert.equal(code.configured, true);
 assert.equal(cn.ref, "MOONSHOT_API_KEY");
 assert.equal(global.ref, "MOONSHOT_API_KEY");
 
+// the shared field's schema default is not a choice: without apiKeyEnvCode the
+// code route still reads its own variable, while an explicit shared ref flows
+// to every route
+sectionValue = { apiKeyEnv: "MOONSHOT_API_KEY" };
+const codeDefault = controller.credentialOf({ id: "kimi-code", refFields: refFieldsOf("kimi-code"), fallbackRef: "KIMI_API_KEY" });
+assert.equal(codeDefault.ref, "KIMI_API_KEY", "the shared default must not reach the code route");
+sectionValue = { apiKeyEnv: "MY_SHARED_KEY" };
+const codeShared = controller.credentialOf({ id: "kimi-code", refFields: refFieldsOf("kimi-code"), fallbackRef: "KIMI_API_KEY" });
+assert.equal(codeShared.ref, "MY_SHARED_KEY", "an explicit apiKeyEnv still applies to the code route");
+sectionValue = { apiKeyEnv: "MOONSHOT_API_KEY", apiKeyEnvCode: "KIMI_API_KEY", models: [{}, {}, {}] };
+
 // per-route override beats the shared field
 sectionValue = { ...sectionValue, apiKeyEnvCn: "MY_CN_KEY" };
 const cnOverride = controller.credentialOf({ id: "kimi-cn", refFields: refFieldsOf("kimi-cn"), fallbackRef: "MOONSHOT_API_KEY" });
